@@ -1,9 +1,9 @@
-import os
-import shutil
 import base64
+import os
 import pickle
-from email.mime.text import MIMEText
+import shutil
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -11,22 +11,36 @@ from googleapiclient.discovery import build
 
 
 def GetToken(*scopes, cred_path='JT_Gmail/gmail_credentials.json'):
+    """
+    Function used to obtain/refresh the token used for authenticating the Gmail API. This needs to be run at least once\
+    with a supplied credentials file. To obtain a credentials file, you need to enable the Gmail API:
+    https://console.developers.google.com/apis/library/gmail.googleapis.com
+
+    This will store the credentials file and the token so subsequent uses are simplified. They can be found at:
+        - JT_Gmail/gmail_credentials.json
+        - JT_Gmail/token.pickle
+
+    :param scopes: Every scope you want to use. Available scopes can be found at: https://developers.google.com/gmail/api/auth/scopes
+    :param cred_path: Path to the credential file - only needs to be supplied the first time.
+
+    :return: The token used to authenticate
+    """
     if not cred_path == 'JT_Gmail/gmail_credentials.json':
         shutil.copy(cred_path, 'JT_Gmail/gmail_credentials.json')
 
     if os.path.exists('JT_Gmail/token.pickle'):
         with open('JT_Gmail/token.pickle', 'rb') as token_file:
-            creds = pickle.load(token_file)
+            token = pickle.load(token_file)
     else:
-        creds = None
+        token = None
 
-    if not creds or not creds.valid:
-        if creds and not set(scopes).issubset(creds.scopes) and creds.expired:
-            creds.refresh(Request())
+    if not token or not token.valid:
+        if token and not set(scopes).issubset(token.scopes) and token.expired:
+            token.refresh(Request())
         else:
             if os.path.exists('JT_Gmail/gmail_credentials.json'):
                 flow = InstalledAppFlow.from_client_secrets_file('JT_Gmail/gmail_credentials.json', scopes)
-                creds = flow.run_local_server(port=0)
+                token = flow.run_local_server(port=0)
             else:
                 raise NameError(
                     """
@@ -37,22 +51,20 @@ def GetToken(*scopes, cred_path='JT_Gmail/gmail_credentials.json'):
                     https://console.developers.google.com/apis/library/gmail.googleapis.com
                     """)
         with open('JT_Gmail/token.pickle', 'wb') as token_file:
-            pickle.dump(creds, token_file)
-    return creds
+            pickle.dump(token, token_file)
+    return token
 
 
 def CreateTextEmail(sender, to, subject, message_text):
     """
     Create a message for an email.
 
-    Args:
-    sender: Email address of the sender.
-    to: Email address of the receiver.
-    subject: The subject of the email message.
-    message_text: The text of the email message.
+    :param sender: Email address of the sender.
+    :param to: Email address of the receiver.
+    :param subject: The subject of the email message.
+    :param message_text: The text of the email message.
 
-    Returns:
-    An object containing a base64url encoded email object.
+    :return: An object containing a base64url encoded email object.
     """
     if type(to) is list:
         to = ','.join(to)
@@ -68,14 +80,12 @@ def CreateHTMLEmail(sender, to, subject, message_html):
     """
     Create a message for an email.
 
-    Args:
-    sender: Email address of the sender.
-    to: Email address of the receiver.
-    subject: The subject of the email message.
-    message_html: The html of the email message.
+    :param sender: Email address of the sender.
+    :param to: Email address of the receiver.
+    :param subject: The subject of the email message.
+    :param message_html: The html of the email message.
 
-    Returns:
-    An object containing a base64url encoded email object.
+    :return: An object containing a base64url encoded email object.
     """
     if type(to) is list:
         to = ','.join(to)
@@ -102,9 +112,9 @@ def SendEmail(email):
     :return:
     """
     # Refresh the token
-    creds = GetToken('https://www.googleapis.com/auth/gmail.send')
+    token = GetToken('https://www.googleapis.com/auth/gmail.send')
 
-    service = build('gmail', 'v1', credentials=creds, cache_discovery=False)
+    service = build('gmail', 'v1', credentials=token, cache_discovery=False)
     return service.users().messages().send(userId="enhance.it.bot@gmail.com", body=email).execute()
 
 
