@@ -1,0 +1,10 @@
+
+# Build files
+/build.ps1
+/dist/
+/build/
+*.egg-info
+
+# These files may contain credentails
+*.pickle
+*.json
