@@ -5,6 +5,7 @@
 /build/
 *.egg-info
 
-# These files may contain credentails
+# These files may contain credentials
 *.pickle
 *.json
+*.pkl

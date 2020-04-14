@@ -8,7 +8,7 @@ with open('requirements', 'r') as file:
 
 setuptools.setup(
     name="JT_Gmail",
-    version="0.0.1",
+    version="0.0.2",
     author="Jacob Thompson",
     author_email="Gothingbop@gmail.com",
     description="My Gmail API Wrapper",
