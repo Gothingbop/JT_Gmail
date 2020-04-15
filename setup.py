@@ -8,13 +8,13 @@ with open('requirements', 'r') as file:
 
 setuptools.setup(
     name="JT_Gmail",
-    version="0.0.2",
+    version="0.0.4",
     author="Jacob Thompson",
     author_email="Gothingbop@gmail.com",
     description="My Gmail API Wrapper",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="",
+    url="https://github.com/Gothingbop/JT_Gmail",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",

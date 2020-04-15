@@ -29,10 +29,12 @@ def GetToken(*scopes, email_address: str = '', cred_path: str = 'JT_Gmail/gmail_
     """
     scopes = set(scopes)
     scopes.add('https://www.googleapis.com/auth/gmail.readonly')
-    token_path = f'JT_Gmail/tokens/{email_address.lower()}.pkl'
+    token_path = f'creds/tokens/{email_address.lower()}.pkl'
 
-    if not cred_path == 'JT_Gmail/gmail_credentials.json':
-        shutil.copy(cred_path, 'JT_Gmail/gmail_credentials.json')
+    if not cred_path == 'creds/gmail_credentials.json':
+        if not os.path.exists('creds'):
+            os.mkdir('creds')
+        shutil.copy(cred_path, 'creds/gmail_credentials.json')
 
     if email_address and os.path.exists(token_path):
         with open(token_path, 'rb') as token_file:
@@ -51,9 +53,9 @@ def GetToken(*scopes, email_address: str = '', cred_path: str = 'JT_Gmail/gmail_
                 print(f'Requested Scopes: {scopes}')
                 scopes = scopes.union(token.scopes)
             print('Generating New Token...')
-            if os.path.exists('JT_Gmail/gmail_credentials.json'):
+            if os.path.exists('creds/gmail_credentials.json'):
                 flow = InstalledAppFlow.from_client_secrets_file(
-                    'JT_Gmail/gmail_credentials.json',
+                    'creds/gmail_credentials.json',
                     scopes
                 )
                 token = flow.run_local_server(port=0)
@@ -70,10 +72,10 @@ def GetToken(*scopes, email_address: str = '', cred_path: str = 'JT_Gmail/gmail_
         service = build('gmail', 'v1', credentials=token, cache_discovery=False)
         profile = service.users().getProfile(userId='me').execute()
         email = profile['emailAddress'].lower()
-        print(f'JT_Gmail/tokens/{email}')
-        if not os.path.exists('JT_Gmail/tokens'):
-            os.mkdir('JT_Gmail/tokens')
-        with open(f'JT_Gmail/tokens/{email}.pkl', 'wb+') as token_file:
+        print(f'creds/tokens/{email}')
+        if not os.path.exists('creds/tokens'):
+            os.mkdir('creds/tokens')
+        with open(f'creds/tokens/{email}.pkl', 'wb+') as token_file:
             pickle.dump(token, token_file)
     else:
         print('Valid token!')

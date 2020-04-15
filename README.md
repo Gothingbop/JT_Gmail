@@ -1,7 +1,5 @@
 # JT_Gmail
 This is a simple interface for programmatically sending emails using the Gmail API. 
-I typically import it as 
-
 
 To get started you must <a href="https://console.developers.google.com/apis/library/gmail.googleapis.com">create a project 
 and enable the Gmail API</a>, create OAuth2 credentials and download them in a json file.
@@ -14,7 +12,8 @@ gmail.GetToken('scope1', 'scope2', ..., email_address='user@gmail.com', cred_pat
 ```
 
 Supply the scopes you plan on using as *args. A list of all the scopes can be found 
-<a href="https://developers.google.com/gmail/api/auth/scopes">here<a>.
+<a href="https://developers.google.com/gmail/api/auth/scopes">here<a>. Each function also includes the required scopes
+in its docstring.
 
 This will prompt for authentication and generate the proper token to use the scopes you supplied. The token and 
 credentials are saved for later use, so you might only have to run that line once. As you perform actions, if they need 
