@@ -1,5 +1,9 @@
 # JT_Gmail
-This is a simple interface for programmatically sending emails using the Gmail API. 
+This is a simple interface for programmatically sending emails using the Gmail API.
+
+```
+pip install JT_Gmail
+``` 
 
 To get started you must <a href="https://console.developers.google.com/apis/library/gmail.googleapis.com">create a project 
 and enable the Gmail API</a>, create OAuth2 credentials and download them in a json file.

@@ -10,7 +10,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 
-def GetToken(*scopes, email_address: str = '', cred_path: str = 'JT_Gmail/gmail_credentials.json'):
+def GetToken(*scopes, email_address: str = '', cred_path: str = 'creds/gmail_credentials.json'):
     """
     Function used to obtain/refresh the token used for authenticating the Gmail API. This needs to be run at least once\
     with a supplied credentials file. To obtain a credentials file, you need to enable the Gmail API:
