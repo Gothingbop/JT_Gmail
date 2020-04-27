@@ -9,3 +9,6 @@
 *.pickle
 *.json
 *.pkl
+
+# Test files
+test.*
