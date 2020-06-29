@@ -26,4 +26,8 @@ def GetEmailHTML(email: dict):
     :return: Decoded string containing the html.
     """
     html_part = FindPart(email['payload'], 'text/html')
-    return base64.urlsafe_b64decode(html_part['body']['data'])
+    if html_part:
+        return base64.urlsafe_b64decode(html_part['body']['data'])
+    text_part = FindPart(email['payload'], 'text/plain')
+    if text_part:
+        return base64.urlsafe_b64decode(text_part['body']['data'])

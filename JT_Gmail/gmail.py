@@ -3,6 +3,8 @@ import io
 import os
 import pickle
 import shutil
+import json
+import re
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -10,13 +12,13 @@ from email.mime.text import MIMEText
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-
+from googleapiclient.http import BatchHttpRequest
 
 # TODO: Check if the supplied user name/email address is in the correct format and maybe correct it
 #  (user -> user@gmail.com)
 
 
-def GetToken(*scopes, email_address: str = '', cred_path: str = 'creds/gmail_credentials.json'):
+def GetToken(scopes: list, email_address: str = '', cred_path: str = 'creds/gmail_credentials.json'):
     """
     Function used to obtain/refresh the token used for authenticating the Gmail API. This needs to be run at least once\
     with a supplied credentials file. To obtain a credentials file, you need to enable the Gmail API:
@@ -27,12 +29,20 @@ def GetToken(*scopes, email_address: str = '', cred_path: str = 'creds/gmail_cre
         - ./creds/gmail_credentials.json
         - ./creds/tokens/token.pickle
 
-    :param scopes: Every scope you want to use. Available scopes can be found at: https://developers.google.com/gmail/api/auth/scopes
+    :param scopes: A list of every scope you want to use. Available scopes can be found at:
+                   https://developers.google.com/gmail/api/auth/scopes
     :param email_address: The email address of the account you want to use.
     :param cred_path: Path to the credential file - only needs to be supplied the first time.
 
     :return: The token used to authenticate
     """
+
+    if not re.fullmatch(r"[\w.%+-]+@gmail.com", email_address):
+        if re.fullmatch(r"[\w.%+-]+", email_address):
+            email_address = f"{email_address}@gmail.com"
+        else:
+            raise Exception("INVALID USERNAME")
+
     scopes = set(scopes)
     scopes.add('https://www.googleapis.com/auth/gmail.readonly')
     token_path = f'creds/tokens/{email_address.lower()}.pkl'
@@ -82,15 +92,18 @@ def GetToken(*scopes, email_address: str = '', cred_path: str = 'creds/gmail_cre
         print(f'creds/tokens/{email}')
         if not os.path.exists('creds/tokens'):
             os.mkdir('creds/tokens')
-        with open(f'creds/tokens/{email}.pkl', 'wb+') as token_file:
-            pickle.dump(token, token_file)
+        try:
+            with open(f'creds/tokens/{email}.pkl', 'wb+') as token_file:
+                pickle.dump(token, token_file)
+        except OSError:
+            print('WARNING: Read-only file system - token will not be saved')
     else:
         print('Valid token!')
     return token
 
 
-def GetService(user, *scopes):
-    token = GetToken(*scopes, email_address=user)
+def GetService(user, scopes):
+    token = GetToken(scopes, email_address=user)
     service = build('gmail', 'v1', credentials=token, cache_discovery=False)
     return service
 
@@ -220,7 +233,47 @@ def GetLabels(user):
     return service.users().labels().list(userId=user).execute()
 
 
-def GetEmailsByLabel(user, labels=[], label_ids=[], format='full'):
+def GetEmails(user: str, message_ids: list, email_format: str = 'full'):
+    """
+    Get's all of the emails given a list of message id's (typically from a list request).
+
+    :param user: The user to get the emails from.
+    :param message_ids: List of message id's to retrieve.
+    :param email_format: The format that the email is returned as, default: "full".
+        - "full":       Returns the full email message data with body content parsed in the payload field; the raw field
+                        is not used. (default)
+        - "metadata":   Returns only email message ID, labels, and email headers.
+        - "minimal":    Returns only email message ID and labels; does not return the email headers, body, or payload.
+        - "raw":        Returns the full email message data with body content in the raw field as a base64url encoded
+                        string; the payload field is not used.
+
+    :return: A list of dicts containing the emails and their metadata.
+    """
+    service = GetService(user=user, scopes=['https://www.googleapis.com/auth/gmail.readonly'])
+    print('Getting Messages...')
+    messages = []
+    good = 0
+    for i in range(0, len(message_ids), 1000):
+        print(f"Messages: {i+1} - {min(i+1000, len(message_ids))}")
+        batch = BatchHttpRequest()  # start building a batch request
+        for message in message_ids[i:(i + 1000)]:  # add a request for each id
+            batch.add(service.users().messages().get(
+                userId='me',
+                id=message,
+                format=email_format
+            ))
+
+        batch.execute()
+        for header, body in batch._responses.values():
+            if header['status'] == '200':
+                good += 1
+                message = json.loads(body)
+                messages.append(message)
+    print(f"Successfully retrieved {good}/{len(message_ids)} messages!")
+    return messages
+
+
+def GetEmailsByLabel(user, labels=(), label_ids=(), email_format='full'):
     """
     Get all of the emails of a user with a given label.
 
@@ -235,7 +288,7 @@ def GetEmailsByLabel(user, labels=[], label_ids=[], format='full'):
     :param user: The user to get the emails from.
     :param labels: the labels to look for.
     :param label_ids: The label_ids to look for.
-    :param format: The format that the email is returned as, default: "full".
+    :param email_format: The format that the email is returned as, default: "full".
         - "full":       Returns the full email message data with body content parsed in the payload field; the raw field
                         is not used. (default)
         - "metadata":   Returns only email message ID, labels, and email headers.
@@ -246,8 +299,10 @@ def GetEmailsByLabel(user, labels=[], label_ids=[], format='full'):
     :return: A list of dicts containing the emails and their metadata.
     """
     GetToken(
-        'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/gmail.labels',
+        scopes=[
+            'https://www.googleapis.com/auth/gmail.readonly',
+            'https://www.googleapis.com/auth/gmail.labels',
+            ],
         email_address=user,
     )
     if isinstance(label_ids, str):
@@ -266,7 +321,12 @@ def GetEmailsByLabel(user, labels=[], label_ids=[], format='full'):
         raise NameError('LABELS NOT VALID')
     message_ids = []
     i = 1
-    service = GetService(user, 'https://www.googleapis.com/auth/gmail.readonly')
+    service = GetService(
+        user=user,
+        scopes=[
+            'https://www.googleapis.com/auth/gmail.readonly'
+        ]
+    )
     print('Getting Message Ids...')
     print(f'Page: {i}\r', end='')
     response = service.users().messages().list(userId='me', labelIds=label_ids).execute()
@@ -278,24 +338,10 @@ def GetEmailsByLabel(user, labels=[], label_ids=[], format='full'):
         message_ids.extend(response['messages'])
         i += 1
     print()
-    i = 1
-    print('Getting Messages...')
-    messages = []
-    for message_id in message_ids:
-        print(f'Message: {i}\r', end='')
-        messages.append(
-            service.users().messages().get(
-                userId='me',
-                id=message_id['id'],
-                format=format
-            ).execute()
-        )
-        i += 1
-
-    return messages
+    return GetEmails(user, message_ids, email_format)
 
 
-def GetEmailsByQuery(user, query: str, format='full'):
+def GetEmailsByQuery(user, query: str, email_format='full'):
     """
     Get all of the emails of a user that match the given query.
 
@@ -307,7 +353,7 @@ def GetEmailsByQuery(user, query: str, format='full'):
 
     :param user: The user to get the emails from.
     :param query: The query to use
-    :param format: The format that the email is returned as, default: "full".
+    :param email_format: The format that the email is returned as, default: "full".
         - "full":       Returns the full email message data with body content parsed in the payload field; the raw field
                         is not used. (default)
         - "metadata":   Returns only email message ID, labels, and email headers.
@@ -318,40 +364,36 @@ def GetEmailsByQuery(user, query: str, format='full'):
     :return: A list of dicts containing the emails and their metadata.
     """
     GetToken(
-        'https://www.googleapis.com/auth/gmail.readonly',
+        scopes=[
+            'https://www.googleapis.com/auth/gmail.readonly'
+        ],
         email_address=user,
     )
-    message_ids = []
+    message_ids = set()
     i = 1
-    service = GetService(user,
-                         'https://www.googleapis.com/auth/gmail.readonly',
-                         )
+    service = GetService(
+        user=user,
+        scopes=[
+            'https://www.googleapis.com/auth/gmail.readonly',
+        ],
+    )
     print('Getting Message Ids...')
-    print(f'Page: {i}\r', end='')
     response = service.users().messages().list(userId='me', q=query).execute()
-    message_ids.extend(response['messages'])
-    while 'nextPageToken' in response:
+    if response["resultSizeEstimate"]:
         print(f'Page: {i}\r', end='')
-        response = service.users().messages().list(userId='me', q=query,
-                                                   pageToken=response['nextPageToken']).execute()
-        message_ids.extend(response['messages'])
-        i += 1
-    print()
-    i = 1
-    print('Getting Messages...')
-    messages = []
-    for message_id in message_ids:
-        print(f'Message: {i}\r', end='')
-        messages.append(
-            service.users().messages().get(
-                userId='me',
-                id=message_id['id'],
-                format=format
-            ).execute()
-        )
-        i += 1
-
-    return messages
+        message_ids.update([message['id'] for message in response['messages']])
+        while 'nextPageToken' in response:
+            print(f'Page: {i}\r', end='')
+            response = service.users().messages().list(userId='me', q=query,
+                                                       pageToken=response['nextPageToken']).execute()
+            message_ids.update([message['id'] for message in response['messages']])
+            i += 1
+        message_ids = list(message_ids)
+        print()
+        return GetEmails(user, message_ids, email_format)
+    else:
+        print("No Results!")
+        return []
 
 
 def ChangeLabels(user: str, message_ids: [str, list] = [], add_labels: [str, list] = [], remove_labels: [str, list] = []):
@@ -388,10 +430,13 @@ def ChangeLabels(user: str, message_ids: [str, list] = [], add_labels: [str, lis
         if label in label_dict:
             remove_label_ids.append(label_dict[label])
 
-    service = GetService(user,
-                         'https://www.googleapis.com/auth/gmail.modify',
-                         'https://www.googleapis.com/auth/gmail.labels'
-                         )
+    service = GetService(
+        user=user,
+        scopes=[
+            'https://www.googleapis.com/auth/gmail.modify',
+            'https://www.googleapis.com/auth/gmail.labels',
+        ],
+    )
 
     service.users().messages().batchModify(userId=user, body={
         "removeLabelIds": remove_label_ids,
