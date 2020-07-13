@@ -8,6 +8,7 @@ import re
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import Union
 
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -18,7 +19,7 @@ from googleapiclient.http import BatchHttpRequest
 #  (user -> user@gmail.com)
 
 
-def GetToken(scopes: list, email_address: str = '', cred_path: str = 'creds/gmail_credentials.json'):
+def GetToken(email_address: str, scopes: list, cred_path: str = 'creds/gmail_credentials.json'):
     """
     Function used to obtain/refresh the token used for authenticating the Gmail API. This needs to be run at least once\
     with a supplied credentials file. To obtain a credentials file, you need to enable the Gmail API:
@@ -36,7 +37,6 @@ def GetToken(scopes: list, email_address: str = '', cred_path: str = 'creds/gmai
 
     :return: The token used to authenticate
     """
-
     if not re.fullmatch(r"[\w.%+-]+@gmail.com", email_address):
         if re.fullmatch(r"[\w.%+-]+", email_address):
             email_address = f"{email_address}@gmail.com"
@@ -102,13 +102,26 @@ def GetToken(scopes: list, email_address: str = '', cred_path: str = 'creds/gmai
     return token
 
 
-def GetService(user, scopes):
-    token = GetToken(scopes, email_address=user)
+def GetService(email_address: str, scopes: list):
+    """
+    Returns a Gmail service with the requested scopes fo the given user.
+    
+    Calls GetToken() to request the required scopes if needed.
+    
+    :param email_address: The email address of the account you want to use.
+    :param scopes: A list of every scope you want to use. Available scopes can be found at:
+                   https://developers.google.com/gmail/api/auth/scopes
+    :return: 
+    """
+    token = GetToken(
+        email_address=email_address,
+        scopes=scopes,
+    )
     service = build('gmail', 'v1', credentials=token, cache_discovery=False)
     return service
 
 
-def CreateTextEmail(sender, to, subject, message_text):
+def CreateTextEmail(sender, to, subject, message_text, headers: dict = None):
     """
     Create a message for an email.
 
@@ -116,6 +129,7 @@ def CreateTextEmail(sender, to, subject, message_text):
     :param to: Email address of the receiver.
     :param subject: The subject of the email message.
     :param message_text: The text of the email message.
+    :param headers: (optional) Additional email headers to include with the message.
 
     :return: An object containing a base64url encoded email object.
     """
@@ -123,31 +137,41 @@ def CreateTextEmail(sender, to, subject, message_text):
         to = ','.join(to)
 
     email = MIMEText(message_text)
+    if headers is not None:
+        for key, value in headers.items():
+            email['key'] = value
     email['to'] = to
     email['from'] = sender
     email['subject'] = subject
     return {'raw': base64.urlsafe_b64encode(email.as_bytes()).decode()}
 
 
-def CreateHTMLEmail(sender, to, subject, message_html, images={}):
+def CreateHTMLEmail(
+        sender: str, to: Union[str, list], subject, message_html, images: dict = None, headers: dict = None):
     """
     Create a message for an email.
 
     :param sender: Email address of the sender.
-    :param to: Email address of the receiver.
+    :param to: Email address or addresses of the receiver(s).
     :param subject: The subject of the email message.
     :param message_html: The html of the email message.
     :param images: (optional) Used for embedding images in your email. This should be dictionary where the key is a
     string with the id of the image, and the value is either a path to the image or a file-like object containing the
     image data. To reference the image in the html file, you must use the format: <img src="cid:image_id">. Where
     image_id is the id you assign it in this dict.
+    :param headers: (optional) Additional email headers to include with the message.
 
     :return: An object containing a base64url encoded email object.
     """
+    if images is None:
+        images = {}
     if type(to) is list:
         to = ','.join(to)
 
     email_multipart = MIMEMultipart('mixed')
+    if headers is not None:
+        for key, value in headers.items():
+            email_multipart['key'] = value
     email_multipart['to'] = to
     email_multipart['from'] = sender
     email_multipart['subject'] = subject
@@ -175,11 +199,12 @@ def CreateHTMLEmail(sender, to, subject, message_html, images={}):
     return {'raw': base64.urlsafe_b64encode(email_multipart.as_bytes()).decode()}
 
 
-def SendTextEmail(sender: str, to: [str, list], subject: str, message_text: str):
+def SendTextEmail(sender: str, to: Union[str, list], subject: str, message_text: str, headers: dict = None):
     """
     Constructs and sends a text-based email message
 
-    Required Scopes: [
+    Required Scopes:
+    [
         'https://www.googleapis.com/auth/gmail.send'
     ]
 
@@ -187,18 +212,25 @@ def SendTextEmail(sender: str, to: [str, list], subject: str, message_text: str)
     :param to: Email address of the receiver.
     :param subject: Subject of the message.
     :param message_text: String of the message text.
+    :param headers: (optional) Additional email headers to include with the message.
     :return:
     """
-    service = GetService(sender, 'https://www.googleapis.com/auth/gmail.send')
-    email = CreateTextEmail(sender, to, subject, message_text)
+    service = GetService(
+        email_address=sender,
+        scopes=[
+            'https://www.googleapis.com/auth/gmail.send'
+        ]
+    )
+    email = CreateTextEmail(sender, to, subject, message_text, headers)
     return service.users().messages().send(userId=sender, body=email).execute()
 
 
-def SendHTMLEmail(sender: str, to: [str, list], subject: str, message_html: str, images={}):
+def SendHTMLEmail(sender: str, to: [str, list], subject: str, message_html: str, images=None, headers: dict = None):
     """
     Constructs and sends a html-based email message
 
-    Required Scopes: [
+    Required Scopes:
+    [
         'https://www.googleapis.com/auth/gmail.send'
     ]
 
@@ -210,11 +242,19 @@ def SendHTMLEmail(sender: str, to: [str, list], subject: str, message_html: str,
     string with the id of the image, and the value is either a path to the image or a file-like object containing the
     image data. To reference the image in the html file, you must use the format: <img src="cid:image_id">. Where
     image_id is the id you assign it in this dict.
+    :param headers: (optional) Additional email headers to include with the message.
 
     :return:
     """
-    service = GetService(sender, 'https://www.googleapis.com/auth/gmail.send')
-    email = CreateHTMLEmail(sender, to, subject, message_html, images)
+    if images is None:
+        images = {}
+    service = GetService(
+        email_address=sender,
+        scopes=[
+            'https://www.googleapis.com/auth/gmail.send'
+        ]
+    )
+    email = CreateHTMLEmail(sender, to, subject, message_html, images, headers)
     return service.users().messages().send(userId=sender, body=email).execute()
 
 
@@ -222,14 +262,20 @@ def GetLabels(user):
     """
     Retrieve all the available labels that a given user has.
 
-    Required Scopes: [
+    Required Scopes:
+    [
         'https://www.googleapis.com/auth/gmail.labels'
     ]
 
     :param user: User to retrieve labels from
     :return: A list of dicts with label information
     """
-    service = GetService(user, 'https://www.googleapis.com/auth/gmail.labels')
+    service = GetService(
+        email_address=user,
+        scopes=[
+            'https://www.googleapis.com/auth/gmail.labels'
+        ]
+    )
     return service.users().labels().list(userId=user).execute()
 
 
@@ -249,7 +295,7 @@ def GetEmails(user: str, message_ids: list, email_format: str = 'full'):
 
     :return: A list of dicts containing the emails and their metadata.
     """
-    service = GetService(user=user, scopes=['https://www.googleapis.com/auth/gmail.readonly'])
+    service = GetService(email_address=user, scopes=['https://www.googleapis.com/auth/gmail.readonly'])
     print('Getting Messages...')
     messages = []
     good = 0
@@ -280,7 +326,8 @@ def GetEmailsByLabel(user, labels=(), label_ids=(), email_format='full'):
     Note: labels and label_id's are different, each label has a unique id assigned on creation, so use labels if you
     want to find labels by name. You can use GetLabels() to look at all the labels and their id's.
 
-    Required Scopes: [
+    Required Scopes:
+    [
         'https://www.googleapis.com/auth/gmail.readonly'
         'https://www.googleapis.com/auth/gmail.labels'
     ]
@@ -322,7 +369,7 @@ def GetEmailsByLabel(user, labels=(), label_ids=(), email_format='full'):
     message_ids = []
     i = 1
     service = GetService(
-        user=user,
+        email_address=user,
         scopes=[
             'https://www.googleapis.com/auth/gmail.readonly'
         ]
@@ -347,7 +394,8 @@ def GetEmailsByQuery(user, query: str, email_format='full'):
 
     Supports the same query format as the Gmail search box. For example, "from:user@example.com msgid:rfc822 is:unread".
 
-    Required Scopes: [
+    Required Scopes:
+    [
         'https://www.googleapis.com/auth/gmail.readonly'
     ]
 
@@ -372,7 +420,7 @@ def GetEmailsByQuery(user, query: str, email_format='full'):
     message_ids = set()
     i = 1
     service = GetService(
-        user=user,
+        email_address=user,
         scopes=[
             'https://www.googleapis.com/auth/gmail.readonly',
         ],
@@ -396,16 +444,28 @@ def GetEmailsByQuery(user, query: str, email_format='full'):
         return []
 
 
-def ChangeLabels(user: str, message_ids: [str, list] = [], add_labels: [str, list] = [], remove_labels: [str, list] = []):
+def ChangeLabels(user: str, message_ids=None, add_labels=None, remove_labels=None):
     """
-    TODO: add docstring
+    Changes the labels assigned to the messages.
 
-    :param user:
-    :param message_ids:
-    :param add_labels:
-    :param remove_labels:
+    Required Scopes:
+    [
+        'https://www.googleapis.com/auth/gmail.modify',
+        'https://www.googleapis.com/auth/gmail.labels',
+    ]
+
+    :param user: The user to get and modify the emails from.
+    :param message_ids: List of message id's to modify.
+    :param add_labels: Labels to add to the messages.
+    :param remove_labels: Labels to remove from tha messages.
     :return:
     """
+    if remove_labels is None:
+        remove_labels = []
+    if add_labels is None:
+        add_labels = []
+    if message_ids is None:
+        message_ids = []
     if isinstance(message_ids, str):
         message_ids = [message_ids]
 
@@ -431,7 +491,7 @@ def ChangeLabels(user: str, message_ids: [str, list] = [], add_labels: [str, lis
             remove_label_ids.append(label_dict[label])
 
     service = GetService(
-        user=user,
+        email_address=user,
         scopes=[
             'https://www.googleapis.com/auth/gmail.modify',
             'https://www.googleapis.com/auth/gmail.labels',
@@ -444,3 +504,63 @@ def ChangeLabels(user: str, message_ids: [str, list] = [], add_labels: [str, lis
         "addLabelIds": add_label_ids,
     }).execute()
 
+
+def SendHTMLReply(sender: str, message_id: str, message_html: str, images=None):
+    """
+    Replies to an email. Works similarly to SendHTMLEmail, except you must supply a message id to reply to.
+
+    Note: The user must be able to read the email it is responding to.
+
+    Required Scopes:
+    [
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.send'
+    ]
+
+    :param sender: User that will be sending the reply
+    :param message_id: The id of the message to reply to.
+    :param message_html: String of the message html
+    :param images: (optional) Used for embedding images in your email. This should be dictionary where the key is a
+        string with the id of the image, and the value is either a path to the image or a file-like object containing
+        the image data. To reference the image in the html file, you must use the format: <img src="cid:image_id">.
+        Where image_id is the id you assign it in this dict.
+    :return:
+    """
+    if images is None:
+        images = {}
+
+    if images is None:
+        images = {}
+    service = GetService(
+        email_address=sender,
+        scopes=[
+            'https://www.googleapis.com/auth/gmail.readonly',
+            'https://www.googleapis.com/auth/gmail.send'
+        ]
+    )
+
+    message = service.users().messages().get(
+        userId='me',
+        id=message_id,
+        format="metadata"
+    ).execute()
+    subject = None
+    to = None
+    reply_id = None
+    for header in message['payload']['headers']:
+        if header['name'] == "Subject":
+            subject = header['value']
+        if header['name'] == "From":
+            to = header['value']
+        if header['name'] == "Message-ID":
+            reply_id = header['value']
+
+    assert subject
+    assert to
+    assert reply_id
+
+    if subject.lower()[:4] != "re: ":
+        subject = "Re: " + subject
+
+    email = CreateHTMLEmail(sender, to, subject, message_html, images, {'In-Reply-To': reply_id})
+    return service.users().messages().send(userId=sender, body=email).execute()
