@@ -5,6 +5,7 @@ import pickle
 import shutil
 import json
 import re
+import time
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -279,7 +280,7 @@ def GetLabels(user):
     return service.users().labels().list(userId=user).execute()
 
 
-def GetEmails(user: str, message_ids: list, email_format: str = 'full'):
+def GetEmails(user: str, message_ids: list, email_format: str = 'full', batch_size=100, batch_wait=0):
     """
     Get's all of the emails given a list of message id's (typically from a list request).
 
@@ -292,17 +293,22 @@ def GetEmails(user: str, message_ids: list, email_format: str = 'full'):
         - "minimal":    Returns only email message ID and labels; does not return the email headers, body, or payload.
         - "raw":        Returns the full email message data with body content in the raw field as a base64url encoded
                         string; the payload field is not used.
+    :param batch_size: Size of the batch request (how many emails to download each iteration).
+                       Note: Gmail API's rate limit is 250 request units per second, but any batch_size over 100 tends
+                       to exceed that.
+    :param batch_wait: How long to wait (seconds) between requests.
 
     :return: A list of dicts containing the emails and their metadata.
     """
     service = GetService(email_address=user, scopes=['https://www.googleapis.com/auth/gmail.readonly'])
-    print('Getting Messages...')
+    print(f'Getting {len(message_ids)} Messages...')
     messages = []
     good = 0
-    for i in range(0, len(message_ids), 1000):
-        print(f"Messages: {i+1} - {min(i+1000, len(message_ids))}")
+    batches = []
+    for i in range(0, len(message_ids), batch_size):
+        print(f"Messages: {i+1} - {min(i+batch_size, len(message_ids))}")
         batch = BatchHttpRequest()  # start building a batch request
-        for message in message_ids[i:(i + 1000)]:  # add a request for each id
+        for message in message_ids[i:(i + batch_size)]:  # add a request for each id
             batch.add(service.users().messages().get(
                 userId='me',
                 id=message,
@@ -310,16 +316,18 @@ def GetEmails(user: str, message_ids: list, email_format: str = 'full'):
             ))
 
         batch.execute()
+        batches.append(batch)
         for header, body in batch._responses.values():
             if header['status'] == '200':
                 good += 1
                 message = json.loads(body)
                 messages.append(message)
+        time.sleep(batch_wait)
     print(f"Successfully retrieved {good}/{len(message_ids)} messages!")
-    return messages
+    return messages, batches
 
 
-def GetEmailsByLabel(user, labels=(), label_ids=(), email_format='full'):
+def GetEmailsByLabel(user, labels=(), label_ids=(), email_format='full', batch_size=100, batch_wait=0):
     """
     Get all of the emails of a user with a given label.
 
@@ -342,6 +350,10 @@ def GetEmailsByLabel(user, labels=(), label_ids=(), email_format='full'):
         - "minimal":    Returns only email message ID and labels; does not return the email headers, body, or payload.
         - "raw":        Returns the full email message data with body content in the raw field as a base64url encoded
                         string; the payload field is not used.
+    :param batch_size: Size of the batch request (how many emails to download each iteration).
+                       Note: Gmail API's rate limit is 250 request units per second, but any batch_size over 100 tends
+                       to exceed that.
+    :param batch_wait: How long to wait (seconds) between requests.
 
     :return: A list of dicts containing the emails and their metadata.
     """
@@ -385,10 +397,10 @@ def GetEmailsByLabel(user, labels=(), label_ids=(), email_format='full'):
         message_ids.extend(response['messages'])
         i += 1
     print()
-    return GetEmails(user, message_ids, email_format)
+    return GetEmails(user, message_ids, email_format, batch_size, batch_wait)
 
 
-def GetEmailsByQuery(user, query: str, email_format='full'):
+def GetEmailsByQuery(user, query: str, email_format='full', batch_size=100, batch_wait=0):
     """
     Get all of the emails of a user that match the given query.
 
@@ -408,6 +420,10 @@ def GetEmailsByQuery(user, query: str, email_format='full'):
         - "minimal":    Returns only email message ID and labels; does not return the email headers, body, or payload.
         - "raw":        Returns the full email message data with body content in the raw field as a base64url encoded
                         string; the payload field is not used.
+    :param batch_size: Size of the batch request (how many emails to download each iteration).
+                       Note: Gmail API's rate limit is 250 request units per second, but any batch_size over 100 tends
+                       to exceed that.
+    :param batch_wait: How long to wait (seconds) between requests.
 
     :return: A list of dicts containing the emails and their metadata.
     """
@@ -438,7 +454,7 @@ def GetEmailsByQuery(user, query: str, email_format='full'):
             i += 1
         message_ids = list(message_ids)
         print()
-        return GetEmails(user, message_ids, email_format)
+        return GetEmails(user, message_ids, email_format, batch_size, batch_wait)
     else:
         print("No Results!")
         return []
