@@ -20,7 +20,7 @@ from googleapiclient.http import BatchHttpRequest
 #  (user -> user@gmail.com)
 
 
-def GetToken(email_address: str, scopes: list, cred_path: str = 'creds/gmail_credentials.json'):
+def GetToken(email_address: str, scopes: list, cred_path: str = 'creds/gmail_credentials.json', browser_flow: bool = True):
     """
     Function used to obtain/refresh the token used for authenticating the Gmail API. This needs to be run at least once\
     with a supplied credentials file. To obtain a credentials file, you need to enable the Gmail API:
@@ -35,6 +35,7 @@ def GetToken(email_address: str, scopes: list, cred_path: str = 'creds/gmail_cre
                    https://developers.google.com/gmail/api/auth/scopes
     :param email_address: The email address of the account you want to use.
     :param cred_path: Path to the credential file - only needs to be supplied the first time.
+    :param browser_flow: Boolean of whether or not to use the browser workflow
 
     :return: The token used to authenticate
     """
@@ -76,7 +77,10 @@ def GetToken(email_address: str, scopes: list, cred_path: str = 'creds/gmail_cre
                     'creds/gmail_credentials.json',
                     scopes
                 )
-                token = flow.run_local_server(port=0)
+                if browser_flow:
+                    token = flow.run_local_server(port=0)
+                else:
+                    token = flow.run_console()
                 print(f"scopes: {scopes}")
             else:
                 raise NameError(
