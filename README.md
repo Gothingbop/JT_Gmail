@@ -12,7 +12,7 @@ Before you can use this module for the first time, you must run:
 ```python
 import JT_Gmail as gmail
 
-gmail.GetToken('scope1', 'scope2', ..., email_address='user@gmail.com', cred_path="path_to_your_credentials.json")
+gmail.GetToken(scopes=['scope1', 'scope2'], email_address='user@gmail.com', cred_path="path_to_your_credentials.json")
 ```
 
 Supply the scopes you plan on using as *args. A list of all the scopes can be found 

@@ -9,6 +9,7 @@ import time
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 from typing import Union
 
 from google.auth.transport.requests import Request
@@ -152,7 +153,13 @@ def CreateTextEmail(sender, to, subject, message_text, headers: dict = None):
 
 
 def CreateHTMLEmail(
-        sender: str, to: Union[str, list], subject, message_html, images: dict = None, headers: dict = None):
+        sender: str,
+        to: Union[str, list],
+        subject, message_html,
+        images: dict = None,
+        attachments: dict = None,
+        headers: dict = None,
+):
     """
     Create a message for an email.
 
@@ -164,12 +171,17 @@ def CreateHTMLEmail(
     string with the id of the image, and the value is either a path to the image or a file-like object containing the
     image data. To reference the image in the html file, you must use the format: <img src="cid:image_id">. Where
     image_id is the id you assign it in this dict.
+    :param attachments: (optional) Used for attaching files to your email. This should be a dictionary where the key is a
+    string with the file name to be seen in the email, and the value is either a path to the file or a file-like object
+    containing the file data.
     :param headers: (optional) Additional email headers to include with the message.
 
     :return: An object containing a base64url encoded email object.
     """
     if images is None:
         images = {}
+    if attachments is None:
+        attachments = {}
     if type(to) is list:
         to = ','.join(to)
 
@@ -188,6 +200,15 @@ def CreateHTMLEmail(
     html_multipart = MIMEMultipart('related')
     html_part = MIMEText(message_html, 'html')
     html_multipart.attach(html_part)
+
+    for file_name, file in attachments.items():
+        if isinstance(file, str):
+            with open(file, 'rb') as _:
+                file = io.BytesIO(_.read())
+                file.seek(0)
+        part = MIMEApplication(file.read(), Name=file_name)
+        part.add_header('Content-Disposition', f'attachment; filename="{file_name}"')
+        html_multipart.attach(part)
 
     for image_id, image_file in images.items():
         if isinstance(image_file, str):
@@ -230,7 +251,14 @@ def SendTextEmail(sender: str, to: Union[str, list], subject: str, message_text:
     return service.users().messages().send(userId=sender, body=email).execute()
 
 
-def SendHTMLEmail(sender: str, to: [str, list], subject: str, message_html: str, images=None, headers: dict = None):
+def SendHTMLEmail(
+        sender: str,
+        to: [str, list],
+        subject: str,
+        message_html: str,
+        images: dict = None,
+        attachments: dict = None,
+        headers: dict = None):
     """
     Constructs and sends a html-based email message
 
@@ -247,19 +275,32 @@ def SendHTMLEmail(sender: str, to: [str, list], subject: str, message_html: str,
     string with the id of the image, and the value is either a path to the image or a file-like object containing the
     image data. To reference the image in the html file, you must use the format: <img src="cid:image_id">. Where
     image_id is the id you assign it in this dict.
+    :param attachments: (optional) Used for attaching files to your email. This should be a dictionary where the key is a
+    string with the file name to be seen in the email, and the value is either a path to the file or a file-like object
+    containing the file data.
     :param headers: (optional) Additional email headers to include with the message.
 
     :return:
     """
     if images is None:
         images = {}
+    if attachments is None:
+        attachments = {}
     service = GetService(
         email_address=sender,
         scopes=[
             'https://www.googleapis.com/auth/gmail.send'
         ]
     )
-    email = CreateHTMLEmail(sender, to, subject, message_html, images, headers)
+    email = CreateHTMLEmail(
+        sender=sender,
+        to=to,
+        subject=subject,
+        message_html=message_html,
+        images=images,
+        attachments=attachments,
+        headers=headers,
+    )
     return service.users().messages().send(userId=sender, body=email).execute()
 
 
